@@ -1,41 +1,55 @@
 #include <iostream>
-#include <thread>
-#include <mutex>
-
+#include <string>
+#include <cstring>
 #include "./headers/libtslog.h"
 
-// Defines para testes iniciais
-#define NUM_THREADS 5
-#define NUM_LOGS_PER_THREAD 10
+// forward declarations
+int runServer(int port);
+int runClient(const std::string &serverIp, int port, const std::string &singleMessage);
 
-std::mutex coutMutex;
-int main() {
+void print_usage() {
+    std::cout << "Usage:\n";
+    std::cout << "  program server <port>\n";
+    std::cout << "  program client <ip> <port> [-m \"message\"]\n";
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        print_usage();
+        return 1;
+    }
+
+    // initialize logging (append to log.txt in project root)
     libtslog::init("log.txt");
 
-    std::thread threads[NUM_THREADS];
-    int threads_num_logs[NUM_THREADS] = {0};
-
-    std::cout << "NUMERO DE THREADS: " << NUM_THREADS << std::endl;
-    std::cout << "NUMERO DE LOGS POR THREAD: " << NUM_LOGS_PER_THREAD << std::endl;
-    std::cout << std::endl;
-
-    for (int i = 0; i < NUM_THREADS; ++i) {
-        threads[i] = std::thread([i, &threads_num_logs]() {
-            for (int j = 0; j < NUM_LOGS_PER_THREAD; ++j) {
-                {
-                    std::lock_guard<std::mutex> lock(coutMutex);
-                    std::cout << "Thread " << i << " está gravando o log " << j << std::endl;
-                }
-                threads_num_logs[i]++;
-                libtslog::log("Thread " + std::to_string(i) + " - Mensagem " + std::to_string(j));
+    std::string mode = argv[1];
+    if (mode == "server") {
+        if (argc < 3) {
+            std::cerr << "Missing port for server\n";
+            return 1;
+        }
+        int port = std::stoi(argv[2]);
+        return runServer(port);
+    } else if (mode == "client") {
+        if (argc < 4) {
+            std::cerr << "Missing ip/port for client\n";
+            return 1;
+        }
+        std::string ip = argv[2];
+        int port = std::stoi(argv[3]);
+        std::string singleMessage = "";
+        
+        for (int i = 4; i < argc; ++i) {
+            if (std::string(argv[i]) == "-m" && i + 1 < argc) {
+                singleMessage = argv[i+1];
+                break;
             }
-        });
+        }
+        int res = runClient(ip, port, singleMessage);
+        libtslog::close();
+        return res;
+    } else {
+        print_usage();
+        return 1;
     }
-    
-    for (int i = 0; i < NUM_THREADS; ++i) {
-        threads[i].join();
-    }
-
-    libtslog::close();
-    return 0;
 }
