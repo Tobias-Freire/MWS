@@ -1,8 +1,6 @@
 #include <iostream>
-#include <thread>
 #include <string>
-#include <atomic>
-
+#include <sstream>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -10,25 +8,7 @@
 
 #include "./headers/libtslog.h"
 
-static std::atomic<bool> running{true};
-
-void receiver_thread(int sock) {
-    const int BUF_SIZE = 1024;
-    char buffer[BUF_SIZE];
-    while (running) {
-        ssize_t received = recv(sock, buffer, BUF_SIZE - 1, 0);
-        if (received > 0) {
-            buffer[received] = '\0';
-            std::cout << "[remote] " << buffer;
-        } else {
-            std::cout << "Connection closed.\n";
-            running = false;
-            break;
-        }
-    }
-}
-
-int runClient(const std::string &serverIp, int port, const std::string &singleMessage) {
+int runClientHttp(const std::string &serverIp, int port, const std::string &path) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
         std::cerr << "Failed to create socket\n";
@@ -50,33 +30,24 @@ int runClient(const std::string &serverIp, int port, const std::string &singleMe
         return -1;
     }
 
-    std::string connLog = std::string("[CLIENT] Connected to ") + serverIp + ":" + std::to_string(port);
-    libtslog::log(connLog);
-    std::cout << connLog << std::endl;
+    std::string reqpath = path.empty() ? "/" : path;
+    if (reqpath[0] != '/') reqpath = "/" + reqpath;
 
-    std::thread recvT(receiver_thread, sock);
+    std::ostringstream req;
+    req << "GET " << reqpath << " HTTP/1.0\r\n"
+        << "Host: " << serverIp << "\r\n"
+        << "Connection: close\r\n\r\n";
 
-    if (!singleMessage.empty()) {
-        std::string msg = singleMessage + "\n";
-        send(sock, msg.c_str(), msg.size(), 0);
-        libtslog::log(std::string("[CLIENT] Sent (single): ") + msg);
-        running = false;
-    } else {
-        std::string line;
-        while (running && std::getline(std::cin, line)) {
-            if (line == "/quit") {
-                send(sock, line.c_str(), line.size(), 0);
-                running = false;
-                break;
-            }
-            line += "\n";
-            send(sock, line.c_str(), line.size(), 0);
-            libtslog::log(std::string("[CLIENT] Sent: ") + line);
-        }
-    }
+    std::string request = req.str();
+    send(sock, request.c_str(), request.size(), 0);
+    libtslog::log("Client sent request: " + reqpath);
 
-    if (recvT.joinable()) recvT.join();
+    char buffer[4096];
+    ssize_t r;
+    while ((r = recv(sock, buffer, sizeof(buffer), 0)) > 0)
+        std::cout.write(buffer, r);
+
     close(sock);
-    libtslog::log("[CLIENT] Client exiting");
+    libtslog::log("Client finished request: " + reqpath);
     return 0;
 }

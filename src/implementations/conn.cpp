@@ -10,6 +10,10 @@ int createSocketAndBind(int port) {
         return -1; // Error creating socket
     }
 
+    // Enable SO_REUSEADDR to allow quick reuse of the port
+    int opt = 1;
+    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
     // Define server address
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
